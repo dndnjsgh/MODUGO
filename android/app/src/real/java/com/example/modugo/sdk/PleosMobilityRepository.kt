@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.roundToInt
 
-/** SDK objects belong to one foreground session; late callbacks cannot revive stopped sessions. */
+/** SDK 자원을 활성 화면 세션에 묶고 종료된 세션의 지연 콜백을 무시한다. */
 class PleosMobilityRepository(context: Context) : MobilityRepository {
     private val context = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())

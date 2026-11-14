@@ -16,6 +16,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
             motionCareEnabled = storage.getBoolean("motion_care", false),
             restIntervalMinutes = storage.getInt("rest_interval", 60),
             preferredTemperatureC = storage.getInt("preferred_temperature", 22),
+            needsAccessibleEntrance = storage.getBoolean("accessible_entrance", true),
+            preferRestAmenities = storage.getBoolean("rest_amenities", true),
+            preferComfortableRoute = storage.getBoolean("comfortable_route", false),
+            preferVoiceGuidance = storage.getBoolean("voice_guidance", false),
         ).normalized()
     } catch (_: ClassCastException) {
         CarePreferences()
@@ -28,6 +32,10 @@ class SharedPreferencesSettingsStore(context: Context) : SettingsStore {
             .putBoolean("motion_care", normalized.motionCareEnabled)
             .putInt("rest_interval", normalized.restIntervalMinutes)
             .putInt("preferred_temperature", normalized.preferredTemperatureC)
+            .putBoolean("accessible_entrance", normalized.needsAccessibleEntrance)
+            .putBoolean("rest_amenities", normalized.preferRestAmenities)
+            .putBoolean("comfortable_route", normalized.preferComfortableRoute)
+            .putBoolean("voice_guidance", normalized.preferVoiceGuidance)
             .apply()
         mutablePreferences.value = normalized
     }

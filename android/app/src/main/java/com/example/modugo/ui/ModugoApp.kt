@@ -63,7 +63,11 @@ fun ModugoApp(state: ModugoUiState, actions: ModugoActions) {
                             TextButton(onClick = actions.dismissMessage, modifier = Modifier.heightIn(min = 56.dp)) { Text("확인") }
                         }
                     }
-                    when (state.screen) {
+                    if (!state.snapshot.canEdit && state.screen != Screen.HOME) {
+                        JourneySummary(state.snapshot)
+                        Notice("지금 필요한 안내", state.evaluation.primary.message)
+                        LockedNotice()
+                    } else when (state.screen) {
                         Screen.HOME -> HomeScreen(state, actions, wide)
                         Screen.REST -> RestScreen(state, actions, wide)
                         Screen.JOURNEY -> JourneyScreen(state)
@@ -81,6 +85,7 @@ fun ModugoApp(state: ModugoUiState, actions: ModugoActions) {
     if (state.selectedPlace != null && state.snapshot.canEdit) {
         PlaceDialog(state.selectedPlace, state.snapshot.waypoint?.id == state.selectedPlace.id, actions)
     }
+    if (state.confirmation != null && state.snapshot.canEdit) NavigationDialog(state.confirmation, actions)
 }
 
 @Composable
@@ -171,6 +176,13 @@ private fun HomeScreen(state: ModugoUiState, actions: ModugoActions, wide: Boole
         }
     }
     JourneySummary(snapshot)
+    ActiveCareSummary(state)
+    if (!snapshot.canEdit) return
+    if (snapshot.demo && snapshot.selectedDestination == null) {
+        state.destinations.firstOrNull { it.recommended }?.let {
+            Notice("목적지 추천 · ${it.place.name} (가상 예시)", "${km(it.place.distanceKm)} km · ${it.place.minutes}분\n${it.reason}")
+        }
+    }
     SectionTitle("함께하는 다섯 가지 케어", "지금 필요한 지원을 골라보세요.")
     val features = listOf(
         Feature("01", Screen.REST, "휴식 추천", "Smart Rest", if (care.restDue) "휴식할 시간이에요" else "나에게 맞는 휴식 간격"),
@@ -255,6 +267,8 @@ private fun JourneySummary(snapshot: MobilitySnapshot) {
             Metric("남은 거리", snapshot.journey?.let { "${km(it.remainingDistanceKm)} km" } ?: "—", Modifier.weight(1f))
         }
         MutedText(if (!snapshot.demo) "실제 NaviHelper 수신 정보 · 미수신 값은 표시하지 않음" else if (snapshot.connection == ConnectionStatus.UNAVAILABLE) "Mock 연결 실패 · 현재 정보 없음" else "Mock 연결 정상 · 실제 SDK 미연동", small = true)
+        if (snapshot.demo && snapshot.journey != null) Text("적용 옵션 · ${snapshot.routeOption.label}")
+        snapshot.waypoint?.let { Text("휴식 경유지 · ${it.name} (가상)") }
     }
 }
 
@@ -280,18 +294,23 @@ private fun RestScreen(state: ModugoUiState, actions: ModugoActions, wide: Boole
     state.snapshot.waypoint?.let { Notice("데모 경유지에 추가됨", "${it.name} · 앱 내부에만 저장한 가상 경유지예요.") }
     SectionTitle("쉬어갈 장소", if (state.snapshot.demo) "위치·거리·시설은 실제 검색 결과가 아닌 샘플입니다." else "검증된 장소 데이터가 없어 실제 경유지 추가는 제공하지 않습니다.")
     if (!state.snapshot.canEdit) LockedNotice()
-    state.restPlaces.forEach { place ->
-        Card(onClick = { actions.selectPlace(place) }, enabled = state.snapshot.canEdit,
+    state.restRecommendations.forEachIndexed { index, recommendation ->
+        val place = recommendation.place
+        Card(onClick = { actions.selectPlace(place) }, enabled = state.snapshot.canEdit && recommendation.selectable,
             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                 disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                BadgeLabel("샘플 장소")
+                BadgeLabel(if (index == 0 && recommendation.recommended) "추천 · 가상 장소" else "가상 장소")
                 Text(place.name, style = MaterialTheme.typography.titleLarge)
                 Text("${place.type} · 예상 ${km(place.distanceKm)} km", style = MaterialTheme.typography.bodyLarge)
                 MutedText(place.facilities.joinToString(" · "))
-                Text(if (state.snapshot.canEdit) "상세 정보 보기  →" else "정차 후 상세 정보 확인", color = MaterialTheme.colorScheme.primary)
+                Text("출입구 ${place.entrance.label} · 장애인 화장실 ${place.accessibleRestroom.label}")
+                Text("이동 ${place.travelMinutes}분 · 추가 ${place.extraMinutes}분 · ${if (place.onRoute) "현재 데모 경로 인근" else "우회 필요"}")
+                MutedText(recommendation.reason)
+                Text(if (!recommendation.selectable) "필수 조건 미충족으로 선택 제외"
+                    else if (state.snapshot.canEdit) "상세 정보 보기  →" else "정차 후 상세 정보 확인", color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -333,13 +352,14 @@ private fun VoiceScreen(state: ModugoUiState, actions: ModugoActions) {
 
 @Composable
 private fun ArrivalScreen(state: ModugoUiState, actions: ModugoActions) {
+    if (state.snapshot.demo && state.snapshot.canEdit) DestinationComparison(state, actions)
     JourneySummary(state.snapshot)
     Notice(if (state.evaluation.arrivalDue) "도착을 준비해 주세요" else "도착 전에 미리 확인해요",
         if (state.snapshot.journey?.arrived == true) "목적지 도착 안내를 받았어요. 주변을 확인하고 안전하게 하차하세요."
         else if (state.evaluation.arrivalDue) "목적지에 가까워졌어요. 상세 확인과 하차 준비는 정차 후 진행하세요."
         else "목적지 접근 시 도착 안내를 표시합니다.")
     if (!state.snapshot.canEdit) LockedNotice()
-    CareCard {
+    if (state.evaluation.arrivalDue || state.snapshot.journey?.arrived == true) CareCard {
         Text("하차 전 확인", style = MaterialTheme.typography.titleLarge)
         listOf("차량이 안전한 곳에 정차했는지 확인", "주변 차량과 보행자 확인", "소지품과 필요한 이동 보조기구 확인").forEachIndexed { index, text ->
             Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -355,18 +375,12 @@ private fun ArrivalScreen(state: ModugoUiState, actions: ModugoActions) {
             Text(if (state.arrivalAcknowledged) "도착 안내 확인 완료" else "도착 안내 확인")
         }
     }
-    if (state.snapshot.canEdit && state.snapshot.demo) {
-        CareCard {
-            BadgeLabel("접근성 샘플 · 현장 확인 필요")
-            Text("모두누리 문화센터 시설 예시", style = MaterialTheme.typography.titleLarge)
-            Text("출입구 · 동쪽 무단차 출입구\n주차 · 지하 1층 장애인 주차구역\n이동 · 로비 엘리베이터", style = MaterialTheme.typography.bodyLarge)
-            MutedText("실제 시설의 존재·이용 가능 여부를 보장하지 않는 데모 정보입니다.")
-        }
-    }
+    Notice("선택한 목적지의 도착 안내", RecommendationEngine.arrivalMessage(state.snapshot))
 }
 
 @Composable
 private fun ComfortScreen(state: ModugoUiState, actions: ModugoActions) {
+    RouteSelection(state, actions)
     CareCard {
         BadgeLabel(if (state.snapshot.demo) "차량 환경 샘플" else "Vehicle State · 앞좌석 좌측 조회")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -388,6 +402,7 @@ private fun ComfortScreen(state: ModugoUiState, actions: ModugoActions) {
 @Composable
 private fun SettingsScreen(state: ModugoUiState, actions: ModugoActions) {
     if (!state.snapshot.canEdit) LockedNotice()
+    PreferenceSettings(state, actions)
     CareCard {
         SettingToggle("이동 케어", "휴식·도착·쾌적한 이동 안내", state.preferences.careEnabled, state.snapshot.canEdit) {
             actions.updatePreferences(state.preferences.copy(careEnabled = it))
@@ -406,7 +421,7 @@ private fun SettingsScreen(state: ModugoUiState, actions: ModugoActions) {
         }
         TemperatureSetting(state, actions)
     }
-    Notice("설정은 자동으로 저장됩니다", "앱을 다시 실행해도 이동 케어, 휴식 간격, Motion Care, 선호 온도 설정을 유지합니다.")
+    Notice("설정은 자동으로 저장됩니다", "필요한 조건과 이동 케어 설정을 유지합니다. 편안한 경로 선호를 켜도 적용 옵션은 확인 전까지 바뀌지 않습니다.")
     MutedText("음성 SDK는 미연동 상태입니다. Mock/Real은 Build Variant에서 선택합니다.")
 }
 
@@ -433,7 +448,7 @@ private fun Stepper(value: String, enabled: Boolean, canDecrease: Boolean, canIn
 }
 
 @Composable
-private fun SettingToggle(title: String, description: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SettingToggle(title: String, description: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 72.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -460,13 +475,13 @@ private fun PlaceDialog(place: RestPlace, alreadyAdded: Boolean, actions: Modugo
         },
         confirmButton = {
             Button(onClick = { actions.addWaypoint(place) }, enabled = !alreadyAdded,
-                modifier = Modifier.heightIn(min = 64.dp)) { Text(if (alreadyAdded) "추가 완료" else "데모 경유지 추가") }
+                modifier = Modifier.heightIn(min = 64.dp)) { Text(if (alreadyAdded) "추가 완료" else "경유지 추가 검토") }
         },
         dismissButton = { TextButton({ actions.selectPlace(null) }, modifier = Modifier.heightIn(min = 64.dp)) { Text("닫기") } })
 }
 
 @Composable
-private fun CareCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun CareCard(content: @Composable ColumnScope.() -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp), content = content)
@@ -474,7 +489,7 @@ private fun CareCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun Notice(title: String, message: String, error: Boolean = false) {
+internal fun Notice(title: String, message: String, error: Boolean = false) {
     val color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     CareCard {
         Text(title, style = MaterialTheme.typography.titleLarge, color = color)
@@ -502,17 +517,17 @@ private fun Metric(label: String, value: String, modifier: Modifier = Modifier) 
 }
 
 @Composable
-private fun BadgeLabel(text: String, accent: Boolean = false) {
+internal fun BadgeLabel(text: String, accent: Boolean = false) {
     val color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Text(text, modifier = Modifier.border(1.dp, color.copy(alpha = .45f), RoundedCornerShape(10.dp))
         .padding(horizontal = 12.dp, vertical = 6.dp), color = color, style = MaterialTheme.typography.labelMedium)
 }
 
 @Composable
-private fun MutedText(text: String, small: Boolean = false) = Text(text,
+internal fun MutedText(text: String, small: Boolean = false) = Text(text,
     style = if (small) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
     color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-private fun km(value: Double) = String.format(Locale.KOREA, "%.1f", value)
+internal fun km(value: Double) = String.format(Locale.KOREA, "%.1f", value)
 
 

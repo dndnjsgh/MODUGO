@@ -31,6 +31,10 @@ data class ModugoUiState(
     val checkedArrivalItems: Set<Int> = emptySet(),
     val arrivalAcknowledged: Boolean = false,
     val message: String? = null,
+    val destinationQuery: String = "병원",
+    val destinations: List<PlaceRecommendation<DestinationCandidate>> = emptyList(),
+    val restRecommendations: List<PlaceRecommendation<RestPlace>> = emptyList(),
+    val confirmation: NavigationConfirmation? = null,
 )
 
 data class ModugoActions(
@@ -46,4 +50,9 @@ data class ModugoActions(
     val toggleArrivalItem: (Int) -> Unit,
     val acknowledgeArrival: () -> Unit,
     val dismissMessage: () -> Unit,
+    val searchDestinations: (String) -> Unit,
+    val selectDestination: (String) -> Unit,
+    val selectRouteOption: (RoutePreference) -> Unit,
+    val confirmNavigation: () -> Unit,
+    val cancelNavigation: () -> Unit,
 )

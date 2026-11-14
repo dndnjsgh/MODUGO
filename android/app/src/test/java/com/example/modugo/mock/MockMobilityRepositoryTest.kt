@@ -18,7 +18,8 @@ class MockMobilityRepositoryTest {
         assertFalse(failed.canEdit)
         for (scenario in DemoScenario.entries.filter { it != DemoScenario.CONNECTION_FAILED }) {
             repository.setScenario(scenario)
-            assertNotNull(repository.state.value.journey)
+            if (scenario == DemoScenario.HOSPITAL_COMPARISON) assertNull(repository.state.value.journey)
+            else assertNotNull(repository.state.value.journey)
             assertNotNull(repository.state.value.vehicle)
             assertEquals(DataOrigin.DEMO, repository.state.value.origin)
         }
@@ -97,5 +98,25 @@ class MockMobilityRepositoryTest {
         }
         val unavailable = MobilitySnapshot(journey = null, vehicle = null, connection = ConnectionStatus.UNAVAILABLE)
         assertTrue(voice.respond(VoiceCommand.REMAINING_TIME, unavailable, CarePreferences()).text.contains("확인할 수 없어요"))
+    }
+
+    @Test fun selectedDestinationAndRouteFollowTheDemoJourney() = runBlocking {
+        val repository = MockMobilityRepository()
+        repository.setScenario(DemoScenario.HOSPITAL_COMPARISON)
+        assertFalse(repository.requestRouteOption(RoutePreference.COMFORTABLE).success)
+        assertFalse(repository.requestDestination("unknown").success)
+        assertTrue(repository.requestDestination("hospital-b").success)
+        assertEquals(15, repository.state.value.journey!!.remainingMinutes)
+        assertTrue(repository.requestRouteOption(RoutePreference.COMFORTABLE).success)
+        assertTrue(repository.requestWaypoint("rest-2").success)
+        for (scenario in listOf(DemoScenario.STARTED, DemoScenario.REST_DUE, DemoScenario.APPROACHING, DemoScenario.ARRIVED)) {
+            repository.setScenario(scenario)
+            assertEquals("병원 B", repository.state.value.journey!!.destination)
+            assertEquals(RoutePreference.COMFORTABLE, repository.state.value.routeOption)
+            assertEquals("rest-2", repository.state.value.waypoint!!.id)
+        }
+        repository.setScenario(DemoScenario.HOSPITAL_COMPARISON)
+        assertNull(repository.state.value.selectedDestination)
+        assertNull(repository.state.value.waypoint)
     }
 }

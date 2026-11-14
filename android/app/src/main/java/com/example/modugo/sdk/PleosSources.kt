@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 enum class SourceConnection { DISCONNECTED, CONNECTING, CONNECTED, FAILED }
 
-/** App-owned port, not a Pleos SDK type. Real adapters will own listener registration and release. */
+/** 내비게이션 연결부가 리스너 등록과 해제를 담당한다. */
 interface NavigationSource {
     val connection: StateFlow<SourceConnection>
     val journey: StateFlow<Journey?>
@@ -14,7 +14,7 @@ interface NavigationSource {
     suspend fun requestWaypoint(place: RestPlace): ActionResult
 }
 
-/** Read only: unavailable or unauthorized values must remain null; there are no vehicle controls. */
+/** 조회 미지원 또는 권한이 없는 항목은 null로 유지한다. */
 interface VehicleStateSource {
     val connection: StateFlow<SourceConnection>
     val vehicle: StateFlow<VehicleState?>

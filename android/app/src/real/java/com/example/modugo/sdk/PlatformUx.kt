@@ -7,7 +7,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 
-/** Platform UX permission is not a claim about vehicle speed or parking gear. */
+/** 플랫폼의 조작 허용 상태를 사용하며 차량 속도나 주차 기어를 판정하지 않는다. */
 class PlatformUx(private val context: Context, private val changed: (Boolean) -> Unit) {
     private var car: Car? = null
     private var manager: CarUxRestrictionsManager? = null
